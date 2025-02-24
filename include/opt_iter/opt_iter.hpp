@@ -99,15 +99,11 @@ namespace opt_iter
             : m_t{ t }
             , m_storage{}
         {
-        }
-
-        Iterator<T, R> begin()
-        {
             m_storage = std::move(m_t.next());
-            return Iterator{ m_t, m_storage };
         }
 
-        Sentinel end() { return Sentinel{}; }
+        Iterator<T, R> begin() { return Iterator{ m_t, m_storage }; }
+        Sentinel       end() { return Sentinel{}; }
 
         T&               m_t;
         std::optional<R> m_storage = std::nullopt;
@@ -123,11 +119,11 @@ namespace opt_iter
      *
      * @return Range.
      */
-    template <typename U, typename T>
-        requires OptIter<T, U>
-    Range<std::remove_reference_t<T>, U> make(T&& t)
+    template <typename R, typename T>
+        requires OptIter<T, R>
+    Range<std::remove_reference_t<T>, R> make(T&& t)
     {
-        return Range<std::remove_reference_t<T>, U>{ t };
+        return Range<std::remove_reference_t<T>, R>{ t };
     }
 
 #if __cpp_explicit_this_parameter
@@ -153,7 +149,12 @@ namespace opt_iter
                 }, "Generator must have a next() member function that returns std::optional<R>"
             );
 
-            self.m_storage = std::move(self.next());
+            // fill the storage once only when the generator is started
+            if (not self.m_started) {
+                self.m_started = true;
+                self.m_storage = std::move(self.next());
+            }
+
             return Iterator{ self, self.m_storage };
         }
 
@@ -161,6 +162,7 @@ namespace opt_iter
 
     private:
         std::optional<R> m_storage = std::nullopt;
+        bool             m_started = false;
     };
 #endif
 }
