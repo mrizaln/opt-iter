@@ -4,8 +4,10 @@
 #include <cassert>
 #include <concepts>
 #include <iterator>
+#include <memory>
 #include <optional>
 #include <type_traits>
+#include <utility>
 
 namespace opt_iter
 {
@@ -49,11 +51,26 @@ namespace opt_iter
         using difference_type   = std::ptrdiff_t;
         using iterator_category = std::input_iterator_tag;
 
-        Iterator() = delete;
+        Iterator()                                 = default;
+        Iterator(const Iterator& other)            = default;
+        Iterator& operator=(const Iterator& other) = default;
 
-        Iterator(T& t, std::optional<R>& storage)
-            : m_t{ &t }
-            , m_storage{ &storage }
+        Iterator(Iterator&& other) noexcept
+            : m_t{ std::exchange(other.m_t, nullptr) }
+            , m_storage{ std::exchange(other.m_storage, nullptr) }
+        {
+        }
+
+        Iterator& operator=(Iterator&& other) noexcept
+        {
+            m_t       = std::exchange(other.m_t, nullptr);
+            m_storage = std::exchange(other.m_storage, nullptr);
+            return *this;
+        }
+
+        Iterator(T* t, std::optional<R>* storage)
+            : m_t{ t }
+            , m_storage{ storage }
         {
         }
 
@@ -76,7 +93,12 @@ namespace opt_iter
             return tmp;
         }
 
-        bool operator==(const Sentinel&) const { return *m_storage == std::nullopt; }
+        friend bool operator==(const Iterator& it, const Sentinel&)
+        {
+            return !it.m_storage || *it.m_storage == std::nullopt;
+        }
+
+        friend bool operator==(const Sentinel&, const Iterator& it) { return it == Sentinel{}; }
 
     private:
         T*                m_t       = nullptr;
@@ -96,17 +118,54 @@ namespace opt_iter
     struct [[nodiscard]] Range
     {
         explicit Range(T& t)
-            : m_t{ t }
-            , m_storage{}
+            : m_t{ &t }
+            , m_storage{ std::make_unique<std::optional<R>>() }
         {
-            m_storage = std::move(m_t.next());
+            *m_storage = std::move(m_t->next());
         }
 
-        Iterator<T, R> begin() { return Iterator{ m_t, m_storage }; }
+        Iterator<T, R> begin() { return Iterator{ m_t, m_storage.get() }; }
         Sentinel       end() { return Sentinel{}; }
 
-        T&               m_t;
-        std::optional<R> m_storage = std::nullopt;
+        T*                                m_t       = nullptr;
+        std::unique_ptr<std::optional<R>> m_storage = nullptr;
+    };
+
+    /**
+     * @class FunctorWrapper
+     *
+     * @brief Wraps a functor to be compatible with opt_iter functionalities.
+     *
+     * @tparam T The type of the functor.
+     * @tparam R The return type of the functor.
+     */
+    template <typename F, typename R>
+        requires std::invocable<F> and std::same_as<std::invoke_result_t<F>, std::optional<R>>
+    struct [[nodiscard]] RangeFunctor
+    {
+        struct Wrapper
+        {
+            std::optional<R> next()
+            {
+                assert(m_f);
+                return m_f->operator()();
+            }
+
+            F* m_f = nullptr;
+        };
+
+        explicit RangeFunctor(F& f)
+            : m_wrapper{ Wrapper{ .m_f = &f } }
+            , m_storage{ std::make_unique<std::optional<R>>() }
+        {
+            *m_storage = std::move(m_wrapper.next());
+        }
+
+        Iterator<Wrapper, R> begin() { return Iterator{ &m_wrapper, m_storage.get() }; }
+        Sentinel             end() { return Sentinel{}; }
+
+        Wrapper                           m_wrapper;
+        std::unique_ptr<std::optional<R>> m_storage = nullptr;
     };
 
     /**
@@ -121,9 +180,16 @@ namespace opt_iter
      */
     template <typename R, typename T>
         requires OptIter<T, R>
-    Range<std::remove_reference_t<T>, R> make(T&& t)
+    Range<std::remove_reference_t<T>, R> make(T& t)
     {
         return Range<std::remove_reference_t<T>, R>{ t };
+    }
+
+    template <typename R, typename F>
+        requires std::invocable<F> and std::same_as<std::invoke_result_t<F>, std::optional<R>>
+    RangeFunctor<F, R> make_fn(F& f)
+    {
+        return RangeFunctor<std::remove_reference_t<F>, R>{ f };
     }
 
 #if __cpp_explicit_this_parameter
@@ -151,18 +217,19 @@ namespace opt_iter
 
             // fill the storage once only when the generator is started
             if (not self.m_started) {
-                self.m_started = true;
-                self.m_storage = std::move(self.next());
+                self.m_storage  = std::make_unique<std::optional<R>>();
+                self.m_started  = true;
+                *self.m_storage = std::move(self.next());
             }
 
-            return Iterator{ self, self.m_storage };
+            return Iterator{ &self, self.m_storage.get() };
         }
 
         Sentinel end() { return Sentinel{}; }
 
     private:
-        std::optional<R> m_storage = std::nullopt;
-        bool             m_started = false;
+        std::unique_ptr<std::optional<R>> m_storage = nullptr;
+        bool                              m_started = false;
     };
 #endif
 }
