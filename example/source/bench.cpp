@@ -55,6 +55,10 @@ struct Val
     float m_float;
 };
 
+#if not ENABLE_SPECIAL_MEMBER_FUNCTIONS
+static_assert(std::is_trivial_v<Val>);
+#endif
+
 class Generator
 {
 public:
@@ -124,6 +128,7 @@ struct NewGen : public opt_iter::Generator<int>
 
 static_assert(std::input_iterator<opt_iter::Iterator<Generator, Val>>);
 static_assert(std::ranges::range<opt_iter::Range<Generator, Val>>);
+static_assert(std::ranges::viewable_range<opt_iter::Range<Generator, Val>>);
 
 int main()
 {
