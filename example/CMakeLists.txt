@@ -16,3 +16,7 @@ target_compile_options(bench PRIVATE -Wall -Wextra -Wconversion)
 add_executable(line_splitter source/line_splitter.cpp)
 target_link_libraries(line_splitter PRIVATE opt-iter)
 target_compile_options(line_splitter PRIVATE -Wall -Wextra -Wconversion)
+
+add_executable(int_gen source/int_gen.cpp)
+target_link_libraries(int_gen PRIVATE opt-iter)
+target_compile_options(int_gen PRIVATE -Wall -Wextra -Wconversion)
