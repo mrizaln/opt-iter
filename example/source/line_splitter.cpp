@@ -1,38 +1,24 @@
 #include <opt_iter/opt_iter.hpp>
 
-#include <cstdio>
+#include <filesystem>
+#include <fstream>
 #include <print>
 #include <ranges>
+#include <sstream>
 
-std::string file_read(const char* path)
+namespace fs = std::filesystem;
+
+std::string file_read(const fs::path& path)
 {
-    auto file = std::fopen(path, "r");
-    if (file == nullptr) {
-        return {};
+    if (not fs::exists(path) or not fs::is_regular_file(path)) {
+        return "";
     }
 
-    if (std::fseek(file, 0, SEEK_END) != 0) {
-        std::fclose(file);
-        return {};
-    }
+    auto file    = std::ifstream{ path };
+    auto sstream = std::stringstream{};
 
-    auto ssize = std::ftell(file);
-    if (ssize < 0 || (ssize == LONG_MAX)) {
-        std::fclose(file);
-        return {};
-    }
-
-    auto result = std::string(static_cast<std::size_t>(ssize), '\0');
-
-    std::rewind(file);
-    auto read = std::fread(result.data(), 1, result.size(), file);
-    if (read != static_cast<std::size_t>(ssize)) {
-        std::fclose(file);
-        return {};
-    }
-
-    std::fclose(file);
-    return result;
+    sstream << file.rdbuf();
+    return sstream.str();
 }
 
 class StringSplitter
@@ -44,7 +30,7 @@ public:
     {
     }
 
-    std::optional<std::string_view> operator()()
+    std::optional<std::string_view> next()
     {
         if (m_pos == std::string_view::npos) {
             return std::nullopt;
@@ -69,13 +55,9 @@ private:
 int main()
 {
     auto string   = file_read(__FILE__);
-    auto splitter = StringSplitter{ string, '\n' };
+    auto splitter = opt_iter::make_owned<StringSplitter>(string, '\n');
 
-    // while (auto line = splitter()) {
-    //     std::println("{:>8} | {}", i++, *line);
-    // }
-
-    for (auto [i, line] : opt_iter::make_fn<std::string_view>(splitter) | std::views::enumerate) {
+    for (auto&& [i, line] : splitter | std::views::enumerate) {
         std::println("{:>8} | {}", i + 1, line);
     }
 }

@@ -13,14 +13,14 @@ namespace util
         return std::chrono::duration_cast<Ms>(dur);
     }
 
-    template <std::ranges::range R>
+    template <std::ranges::viewable_range R>
     struct TakeElipsis
     {
         R&&         m_range;
         std::size_t m_limit;
     };
 
-    template <std::ranges::range R>
+    template <std::ranges::viewable_range R>
     TakeElipsis<R> take_elipsis(R&& range, std::size_t limit = std::numeric_limits<std::size_t>::max())
     {
         return TakeElipsis<R>{ std::forward<R>(range), limit };
@@ -50,7 +50,7 @@ namespace util
     }
 }
 
-template <std::ranges::range R>
+template <std::ranges::viewable_range R>
 struct std::formatter<util::TakeElipsis<R>>
 {
     std::formatter<std::ranges::range_value_t<R>> m_elem_fmt;
