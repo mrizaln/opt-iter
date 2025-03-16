@@ -6,16 +6,6 @@
 
 namespace opt_iter::traits
 {
-    template <typename T>
-    concept HasNext = requires (T t) {
-        { t.next() };
-    };
-
-    template <typename T>
-    concept HasCallOp = requires (T t) {
-        { t() };
-    };
-
     template <typename>
     struct OptTrait : std::false_type
     {
@@ -27,24 +17,44 @@ namespace opt_iter::traits
         using Type = T;
     };
 
+    template <typename T>
+    concept HasNext = requires (T t) {
+        { t.next() };
+        requires OptTrait<std::invoke_result_t<decltype(&T::next), T>>::value;
+    };
+
+    template <typename T>
+    concept HasCallOp = requires (T t) {
+        { t() };
+        requires OptTrait<std::invoke_result_t<T>>::value;
+    };
+
     template <typename>
     struct OptIterTrait : std::false_type
     {
         static_assert(false, "Type is not compatible with opt_iter.");
     };
 
-    template <HasNext T>
-        requires OptTrait<std::invoke_result_t<decltype(&T::next), T>>::value
-    struct OptIterTrait<T> : std::true_type
+    template <typename T>
+        requires (HasNext<T> and not HasCallOp<T>)
+    struct OptIterTrait<T>
     {
         using Ret = OptTrait<std::invoke_result_t<decltype(&T::next), T>>::Type;
     };
 
-    template <HasCallOp T>
-        requires OptTrait<std::invoke_result_t<T>>::value
-    struct OptIterTrait<T> : std::true_type
+    template <typename T>
+        requires (HasCallOp<T> and not HasNext<T>)
+    struct OptIterTrait<T>
     {
         using Ret = OptTrait<std::invoke_result_t<T>>::Type;
+    };
+
+    // allow type that has both next() and operator()()
+    template <typename T>
+        requires HasNext<T> and HasCallOp<T>
+    struct OptIterTrait<T> : std::true_type
+    {
+        using Ret = OptTrait<std::invoke_result_t<decltype(&T::next), T>>::Type;
     };
 }
 
