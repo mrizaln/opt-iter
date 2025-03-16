@@ -14,18 +14,21 @@
 namespace opt_iter
 {
     /**
+     * @brief Checks if a type is compatible to be std::optional-based iterator return type.
+     *
+     * @tparam R The type to be checked.
+     */
+    template <typename R>
+    concept OptIterRet = std::move_constructible<R> and not std::is_reference_v<R>;
+
+    /**
      * @brief Checks if a type is compatible to be std::optional-based iterator.
      *
      * @tparam T The type to be checked.
      * @tparam R The return type of the iterable (unwrapped).
      */
-    template <typename T, typename R>
-    concept OptIter = requires (T t, R u) {
-        { t.next() } -> std::same_as<std::optional<R>>;
-
-        requires std::move_constructible<R>;
-        requires not std::is_reference_v<R>;
-    };
+    template <typename T>
+    concept OptIter = traits::HasNext<T> or traits::HasCallOp<T>;
 
     /**
      * @class Sentinel
@@ -44,8 +47,7 @@ namespace opt_iter
      * @tparam T The type of the iterable.
      * @tparam R The return type of the iterable (unwrapped).
      */
-    template <typename T, typename R>
-        requires OptIter<T, R>
+    template <traits::HasNext T, OptIterRet R>
     class [[nodiscard]] Iterator
     {
     public:
@@ -108,16 +110,16 @@ namespace opt_iter
     };
 
     /**
-     * @class FunctorWrapper
+     * @class FnWrapper
      *
      * @brief Wraps a functor to be compatible with opt_iter functionalities.
      *
      * @tparam F The type of the functor.
      * @tparam R The return type of the functor (unwrapped).
      */
-    template <typename F, typename R>
-        requires traits::HasCallOp<F> and std::same_as<typename traits::OptIterTrait<F>::Ret, R>
-    struct [[nodiscard]] FunctorWrapper
+    template <traits::HasCallOp F, OptIterRet R>
+        requires std::same_as<typename traits::OptIterTrait<F>::Ret, R>
+    struct [[nodiscard]] FnWrapper
     {
         std::optional<R> next()
         {
@@ -136,8 +138,7 @@ namespace opt_iter
      * @tparam T The type of the iterable.
      * @tparam R The return type of the iterable (unwrapped).
      */
-    template <typename T, typename R>
-        requires OptIter<T, R>
+    template <traits::HasNext T, OptIterRet R>
     class [[nodiscard]] Range
     {
     public:
@@ -145,7 +146,6 @@ namespace opt_iter
             : m_t{ &t }
             , m_storage{ std::make_unique<std::optional<R>>() }
         {
-            *m_storage = std::move(m_t->next());
         }
 
         T& underlying() const
@@ -154,8 +154,22 @@ namespace opt_iter
             return *m_t;
         }
 
-        Iterator<T, R> begin() { return Iterator{ m_t, m_storage.get() }; }
-        Sentinel       end() { return Sentinel{}; }
+        void clear()
+        {
+            assert(m_storage != nullptr);
+            *m_storage = std::nullopt;
+        }
+
+        Iterator<T, R> begin()
+        {
+            assert(m_storage != nullptr);
+            if (*m_storage == std::nullopt) {
+                *m_storage = std::move(m_t->next());
+            }
+            return Iterator{ m_t, m_storage.get() };
+        }
+
+        Sentinel end() { return Sentinel{}; }
 
     private:
         T*                                m_t       = nullptr;
@@ -163,23 +177,22 @@ namespace opt_iter
     };
 
     /**
-     * @class FunctorWrapper
+     * @class FnWrapper
      *
      * @brief Wraps a functor to be compatible with opt_iter functionalities.
      *
      * @tparam T The type of the functor.
      * @tparam R The return type of the functor (unwrapped).
      */
-    template <typename F, typename R>
-        requires traits::HasCallOp<F> and std::same_as<typename traits::OptIterTrait<F>::Ret, R>
-    class [[nodiscard]] RangeFunctor
+    template <traits::HasCallOp F, OptIterRet R>
+        requires std::same_as<typename traits::OptIterTrait<F>::Ret, R>
+    class [[nodiscard]] RangeFn
     {
     public:
-        explicit RangeFunctor(F& f)
+        explicit RangeFn(F& f)
             : m_wrapper{ &f }
             , m_storage{ std::make_unique<std::optional<R>>() }
         {
-            *m_storage = std::move(m_wrapper.next());
         }
 
         F& underlying() const
@@ -188,11 +201,25 @@ namespace opt_iter
             return *m_wrapper.m_f;
         }
 
-        Iterator<FunctorWrapper<F, R>, R> begin() { return Iterator{ &m_wrapper, m_storage.get() }; }
-        Sentinel                          end() { return Sentinel{}; }
+        void clear()
+        {
+            assert(m_storage != nullptr);
+            *m_storage = std::nullopt;
+        }
+
+        Iterator<FnWrapper<F, R>, R> begin()
+        {
+            assert(m_storage != nullptr);
+            if (*m_storage == std::nullopt) {
+                *m_storage = std::move(m_wrapper.next());
+            }
+            return Iterator{ &m_wrapper, m_storage.get() };
+        }
+
+        Sentinel end() { return Sentinel{}; }
 
     private:
-        FunctorWrapper<F, R>              m_wrapper;
+        FnWrapper<F, R>                   m_wrapper;
         std::unique_ptr<std::optional<R>> m_storage = nullptr;
     };
 
@@ -204,8 +231,8 @@ namespace opt_iter
      * @tparam T The type of the iterable.
      * @tparam R The return type of the iterable (unwrapped).
      */
-    template <typename T, typename R>
-        requires std::movable<T> and OptIter<T, R>
+    template <traits::HasNext T, OptIterRet R>
+        requires std::movable<T>
     class [[nodiscard]] OwnedRange
     {
     public:
@@ -213,14 +240,27 @@ namespace opt_iter
             : m_t{ std::move(t) }
             , m_storage{ std::make_unique<std::optional<R>>() }
         {
-            *m_storage = std::move(m_t.next());
         }
 
         T&       underlying() { return m_t; }
         const T& underlying() const { return m_t; }
 
-        Iterator<T, R> begin() { return Iterator{ &m_t, m_storage.get() }; }
-        Sentinel       end() { return Sentinel{}; }
+        void clear()
+        {
+            assert(m_storage != nullptr);
+            *m_storage = std::nullopt;
+        }
+
+        Iterator<T, R> begin()
+        {
+            assert(m_storage != nullptr);
+            if (*m_storage == std::nullopt) {
+                *m_storage = std::move(m_t.next());
+            }
+            return Iterator{ &m_t, m_storage.get() };
+        }
+
+        Sentinel end() { return Sentinel{}; }
 
     private:
         T                                 m_t;
@@ -228,82 +268,97 @@ namespace opt_iter
     };
 
     /**
-     * @class OwnedRangeFunctor
+     * @class OwnedRangeFn
      *
      * @brief Represents a range of optional-based functor while owning the functor.
      *
      * @tparam F The type of the functor.
      * @tparam R The return type of the functor (unwrapped).
      */
-    template <typename F, typename R>
-        requires traits::HasCallOp<F> and std::same_as<typename traits::OptIterTrait<F>::Ret, R>
-    class [[nodiscard]] OwnedRangeFunctor
+    template <traits::HasCallOp F, OptIterRet R>
+        requires std::movable<F> and std::same_as<typename traits::OptIterTrait<F>::Ret, R>
+    class [[nodiscard]] OwnedRangeFn
     {
     public:
-        explicit OwnedRangeFunctor(F&& f)
+        explicit OwnedRangeFn(F&& f)
             : m_f{ std::move(f) }
             , m_wrapper{ &m_f }
             , m_storage{ std::make_unique<std::optional<R>>() }
         {
-            *m_storage = std::move(m_wrapper.next());
         }
 
         F&       underlying() { return m_f; }
         const F& underlying() const { return m_f; }
 
-        Iterator<FunctorWrapper<F, R>, R> begin() { return Iterator{ &m_wrapper, m_storage.get() }; }
-        Sentinel                          end() { return Sentinel{}; }
+        void clear()
+        {
+            assert(m_storage != nullptr);
+            *m_storage = std::nullopt;
+        }
+
+        Iterator<FnWrapper<F, R>, R> begin()
+        {
+            assert(m_storage != nullptr);
+            if (*m_storage == std::nullopt) {
+                *m_storage = std::move(m_wrapper.next());
+            }
+            return Iterator{ &m_wrapper, m_storage.get() };
+        }
+
+        Sentinel end() { return Sentinel{}; }
 
     private:
         F                                 m_f;
-        FunctorWrapper<F, R>              m_wrapper;
+        FnWrapper<F, R>                   m_wrapper;
         std::unique_ptr<std::optional<R>> m_storage = nullptr;
     };
 
     /**
-     * @brief Helper function to create a Range or RangeFunctor.
+     * @brief Helper function to create a Range or RangeFn.
      *
      * @tparam T The type of the iterable.
      *
      * @param t The iterable to be wrapped.
      *
-     * @return Range if the iterable has `next()` member function, RangeFunctor if the iterable is a functor.
+     * @return Range if the iterable has `next()` member function, RangeFn if the iterable is a functor.
      */
-    template <typename T>
-        requires traits::OptIterTrait<T>::value
+    template <OptIter T>
     auto make(T& t)
     {
         using Ret = traits::OptIterTrait<T>::Ret;
-
-        if constexpr (traits::HasNext<T>) {
+        if constexpr (traits::HasNext<T> and traits::HasCallOp<T>) {
+            return Range<T, Ret>{ t };
+        } else if constexpr (traits::HasNext<T>) {
             return Range<T, Ret>{ t };
         } else if constexpr (traits::HasCallOp<T>) {
-            return RangeFunctor<T, Ret>{ t };
+            return RangeFn<T, Ret>{ t };
         } else {
             static_assert(false, "Invalid type, should not reach here.");
         }
     }
 
     /**
-     * @brief Helper function to create an OwnedRange or OwnedRangeFunctor.
+     * @brief Helper function to create an OwnedRange or OwnedRangeFn.
      *
      * @tparam T The type of the iterable.
      * @tparam Args The arguments to construct the iterable.
      *
      * @param args The arguments to construct the iterable.
      *
-     * @return OwnedRange if the iterable has `next()` member function, OwnedRangeFunctor if the iterable is a
+     * @return OwnedRange if the iterable has `next()` member function, OwnedRangeFn if the iterable is a
      * functor.
      */
-    template <typename T, typename... Args>
-        requires traits::OptIterTrait<T>::value and std::constructible_from<T, Args...>
+    template <OptIter T, typename... Args>
+        requires std::constructible_from<T, Args...>
     auto make_owned(Args&&... args)
     {
         using Ret = traits::OptIterTrait<T>::Ret;
-        if constexpr (traits::HasNext<T>) {
+        if constexpr (traits::HasNext<T> and traits::HasCallOp<T>) {
+            return OwnedRange<T, Ret>{ T{ std::forward<Args>(args)... } };
+        } else if constexpr (traits::HasNext<T>) {
             return OwnedRange<T, Ret>{ T{ std::forward<Args>(args)... } };
         } else if constexpr (traits::HasCallOp<T>) {
-            return OwnedRangeFunctor<T, Ret>{ T{ std::forward<Args>(args)... } };
+            return OwnedRangeFn<T, Ret>{ T{ std::forward<Args>(args)... } };
         } else {
             static_assert(false, "Invalid type, should not reach here.");
         }
