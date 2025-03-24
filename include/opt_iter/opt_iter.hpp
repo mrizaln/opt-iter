@@ -78,7 +78,7 @@ namespace opt_iter
         {
         }
 
-        R&& operator*() const
+        [[nodiscard]] R operator*() const
         {
             assert(*m_storage != std::nullopt);
             return std::move(*m_storage).value();
@@ -142,6 +142,8 @@ namespace opt_iter
     class [[nodiscard]] Range
     {
     public:
+        using Ret = R;
+
         explicit Range(T& t)
             : m_t{ &t }
             , m_storage{ std::make_unique<std::optional<R>>() }
@@ -189,6 +191,8 @@ namespace opt_iter
     class [[nodiscard]] RangeFn
     {
     public:
+        using Ret = R;
+
         explicit RangeFn(F& f)
             : m_wrapper{ &f }
             , m_storage{ std::make_unique<std::optional<R>>() }
@@ -236,8 +240,12 @@ namespace opt_iter
     class [[nodiscard]] OwnedRange
     {
     public:
-        explicit OwnedRange(T&& t)
-            : m_t{ std::move(t) }
+        using Ret = R;
+
+        template <typename... Args>
+            requires std::constructible_from<T, Args...>
+        OwnedRange(Args&&... args)
+            : m_t{ std::forward<Args>(args)... }
             , m_storage{ std::make_unique<std::optional<R>>() }
         {
         }
@@ -280,8 +288,12 @@ namespace opt_iter
     class [[nodiscard]] OwnedRangeFn
     {
     public:
-        explicit OwnedRangeFn(F&& f)
-            : m_f{ std::move(f) }
+        using Ret = R;
+
+        template <typename... Args>
+            requires std::constructible_from<F, Args...>
+        OwnedRangeFn(Args&&... args)
+            : m_f{ std::forward<Args>(args)... }
             , m_wrapper{ &m_f }
             , m_storage{ std::make_unique<std::optional<R>>() }
         {
@@ -354,11 +366,11 @@ namespace opt_iter
     {
         using Ret = traits::OptIterTrait<T>::Ret;
         if constexpr (traits::HasNext<T> and traits::HasCallOp<T>) {
-            return OwnedRange<T, Ret>{ T{ std::forward<Args>(args)... } };
+            return OwnedRange<T, Ret>{ std::forward<Args>(args)... };
         } else if constexpr (traits::HasNext<T>) {
-            return OwnedRange<T, Ret>{ T{ std::forward<Args>(args)... } };
+            return OwnedRange<T, Ret>{ std::forward<Args>(args)... };
         } else if constexpr (traits::HasCallOp<T>) {
-            return OwnedRangeFn<T, Ret>{ T{ std::forward<Args>(args)... } };
+            return OwnedRangeFn<T, Ret>{ std::forward<Args>(args)... };
         } else {
             static_assert(false, "Invalid type, should not reach here.");
         }
