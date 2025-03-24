@@ -2,6 +2,7 @@
 
 #include "opt_iter/opt_iter.hpp"
 
+#include <array>
 #include <generator>
 #include <iterator>
 #include <limits>
@@ -91,12 +92,57 @@ private:
     std::size_t m_limit = 0;
 };
 
+template <std::size_t N, std::integral Index = std::size_t>
+    requires (N > 0)
+class FlatIndex
+{
+public:
+    template <std::convertible_to<Index>... Ts>
+        requires (sizeof...(Ts) == N)
+    FlatIndex(Ts... dims)
+        : m_dims{ static_cast<Index>(dims)... }
+        , m_current{}
+    {
+    }
+
+    std::optional<std::array<Index, N>> next()
+    {
+        if (m_current == m_dims) {
+            return std::nullopt;
+        }
+
+        auto prev = m_current;
+
+        for (auto i = 0u; i < N; ++i) {
+            if (++m_current[i] >= m_dims[i]) {
+                m_current[i] = 0;
+            } else {
+                return prev;
+            }
+        }
+
+        m_current = m_dims;
+        return prev;
+    }
+
+    void                 reset() { m_current = {}; }
+    std::array<Index, N> dims() const { return m_dims; }
+    static Index         size() { return N; }
+
+private:
+    std::array<Index, N> m_dims;
+    std::array<Index, N> m_current;
+};
+
+template <typename... Ts>
+FlatIndex(Ts...) -> FlatIndex<sizeof...(Ts)>;
+
 static_assert(opt_iter::traits::HasNext<RandGen>);
 static_assert(std::input_iterator<opt_iter::Iterator<RandGen, Val>>);
 static_assert(std::ranges::range<opt_iter::Range<RandGen, Val>>);
 static_assert(std::ranges::viewable_range<opt_iter::Range<RandGen, Val>>);
 
-std::generator<Val> rand_gen_2(std::mt19937& rng, int limit)
+std::generator<Val> rand_gen_2(std::mt19937& rng, std::size_t limit)
 {
     auto int_dist = std::uniform_int_distribution{
         std::numeric_limits<int>::min(),
@@ -107,7 +153,7 @@ std::generator<Val> rand_gen_2(std::mt19937& rng, int limit)
         std::numeric_limits<float>::max(),
     };
 
-    auto count = 0;
+    auto count = 0u;
     while (count++ < limit) {
         co_yield Val{ int_dist(rng), float_dist(rng) };
     }
@@ -130,7 +176,7 @@ static_assert(opt_iter::traits::HasCallOp<SeqUIntGen>);
 
 int main()
 {
-    constexpr auto num_iter = 1'000'000;
+    auto num_iter = 2'000'000u;
 
     auto rng = std::mt19937{ std::random_device{}() };
     auto gen = RandGen{ rng, num_iter };
@@ -167,6 +213,32 @@ int main()
     std::println("using new gen: {}", util::take_elipsis(iter, 20));
     std::println("using new gen: {}", util::take_elipsis(iter, 20));
     std::println("using new gen: {}", util::take_elipsis(iter, 20));
+
+    num_iter       = 100;
+    auto flat_iter = FlatIndex{ num_iter, num_iter, num_iter };
+
+    auto [time4, size4] = util::time_repeated(10, [&] {
+        auto vec = opt_iter::make(flat_iter) | std::views::join | std::ranges::to<std::vector>();
+        flat_iter.reset();
+        return vec.size();
+    });
+    std::println("using opt_iter: {}, {}", time4, size4);
+
+    auto [time5, size5] = util::time_repeated(10, [&] {
+        auto vec = std::vector<std::size_t>();
+        while (auto v = flat_iter.next()) {
+            vec.insert(vec.end(), v->begin(), v->end());
+        }
+        flat_iter.reset();
+        return vec.size();
+    });
+    std::println("using while loop: {}, {}", time5, size5);
+
+    flat_iter.reset();
+
+    for (auto [x, y, z] : opt_iter::make_owned<FlatIndex<3>>(3, 2, 3)) {
+        std::println("({}, {}, {})", x, y, z);
+    }
 
     return 0;
 }
