@@ -9,14 +9,13 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 add_subdirectory(lib/opt-iter)
 
-add_executable(bench source/bench.cpp)
-target_link_libraries(bench PRIVATE opt-iter)
-target_compile_options(bench PRIVATE -Wall -Wextra -Wconversion)
+function(create_exe name)
+    add_executable(${name} source/${name}.cpp)
+    target_link_libraries(${name} PRIVATE opt-iter)
+    target_compile_options(${name} PRIVATE -Wall -Wextra -Wconversion)
+endfunction()
 
-add_executable(line_splitter source/line_splitter.cpp)
-target_link_libraries(line_splitter PRIVATE opt-iter)
-target_compile_options(line_splitter PRIVATE -Wall -Wextra -Wconversion)
-
-add_executable(int_gen source/int_gen.cpp)
-target_link_libraries(int_gen PRIVATE opt-iter)
-target_compile_options(int_gen PRIVATE -Wall -Wextra -Wconversion)
+create_exe(bench)
+create_exe(line_splitter)
+create_exe(int_gen)
+create_exe(lambda)

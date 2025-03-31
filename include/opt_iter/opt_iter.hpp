@@ -361,7 +361,7 @@ namespace opt_iter
      * functor.
      */
     template <OptIter T, typename... Args>
-        requires std::constructible_from<T, Args...>
+        requires std::constructible_from<T, Args...> and std::movable<T>
     auto make_owned(Args&&... args)
     {
         using Ret = traits::OptIterTrait<T>::Ret;

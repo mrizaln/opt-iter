@@ -4,7 +4,7 @@ Optional-based input range/generator wrapper for C++20 and above.
 
 ## Motivation
 
-It's not uncommon to want to create a generator for a particular task and stop when condition is met. Traditionally the generator in C++ is defined as a functor like this.
+It's not uncommon to want to create a generator for a particular task and stop when some condition is met.
 
 ```cpp
 class StringSplitter
@@ -39,14 +39,14 @@ private:
 };
 ```
 
-This might be sufficient for some people, but for some, this will introduce a clunky syntax since it's not compatible with range-based for loop or any C++20 (or above) ranges library.
+This might be sufficient for some people, but for some it's not--the type is not compatible with range-based for loop or any C++20 (or above) ranges library.
 
 > using while loop
 
 ```cpp
 // ...
 
-std::string_view load_string();
+std::string file_read(const std::filesystem::path& path);
 
 int main()
 {
@@ -61,9 +61,9 @@ int main()
 
 ```
 
-This library attempts to provide a way to wrap input range/generator that is compatible with range-based for loop and C++20 ranges library. The main motivation is that writing a range or iterator that is compatible with `std` functionalities is tedious by the amount of boilerplate it requires thus it's also error prone--quite hard to get it right. So making an easy to use adapter for an existing generator pattern is preferable.
+This library attempts to provide wrappers for input range/generator pattern, similar to the one above that are compatible with range-based for loop and the C++20 ranges library. Creating the wrapper yourself is tedious due to the amount of boilerplate required and is error-prone, so providing an easy to use wrapper for this pattern is the main motivation of creating this library.
 
-> using `opt-iter` range wrapper that is compatible with C++ iterator and ranges
+> using `opt-iter` range wrapper
 
 ```cpp
 // ...
@@ -82,11 +82,23 @@ int main()
 
 ```
 
-The making of this library is inspired by the Rust iterator model. Rust, use `next()` method for acquiring the next iteration of an iterator. This makes it trivial to create a simple single-pass iterator.
+The making of this library is inspired by the Rust iterator model. Rust, use `next()` method for acquiring the next iteration of an iterator. This makes it trivial to create a simple single-pass iterator like an input range/generator.
 
 ## Usage
 
-This library considers a type that is compatible with this library as `OptIter`, and the type produced by that type must satisfy `OptIterRet`.
+This library uses `next()` member function as the function that generate the value, similar to Rust's iterator. But, since using `operator()` is common in creating generator pattern in C++ (as functor), I decided to support it as well. Furthermore, by allowing using `operator()` creating a short simple generator using lambda is trivial (see [example](#example)).
+
+This library defines a concept `OptIter`` that checks whether a type is compatible with being wrapped by this library. The type produced by that type must satisfy `OptIterRet`.
+
+```cpp
+template <typename T>
+concept OptIter = /* has next member function or a call operator that returns an optional */;
+
+template <typename R>
+concept OptIterRet = std::move_constructible<R> and not std::is_reference_v<R>;
+```
+
+> see the definition in the [source file](include/opt_iter/opt_iter.hpp)
 
 There are two essential functions in this library:
 
@@ -98,9 +110,20 @@ There are two essential functions in this library:
 
   This function works like the previous function but it owns the `OptIter` itself. It constructs `OwnedRange` or `OwnedRangeFn` depending on the `OptIter` kind: regular class/struct with `next()` member function for the former and functor for the latter.
 
-  > `OptIter` is required to be movable if it is to be wrapped by `OwnedRange` or`OwnedRangeFn`. This requirement is derived from the fact that to make `OwnedRange` and `OwnedRangeFn`, it needs to satisfy `std::ranges::viewable_range` which requires the type to be `std::movable`. This is done so that it can be used with`std::views::*` functionalities.
+  > `OptIter` is required to be movable if it is to be wrapped by `OwnedRange` or `OwnedRangeFn`. This requirement is derived from the fact that to make `OwnedRange` and `OwnedRangeFn`, it needs to satisfy `std::ranges::viewable_range` which requires the type to be `std::movable`. This is done so that it can be used with `std::views::*` functionalities.
 
-This library use `next()` member function as the function that outputs the value instead of traditional `operator()`. **_"Why use `next()` member function instead of `operator()`?"_** you might ask. Well, I steal this idea from Rust iterator model which uses `next()` function that returns an `Opt`. Having a named function is better for readability stand point, but since using `operator()` is still common in creating generator (as functor), I decided to support it as well.
+The wrapper types are:
+
+- `Range`: stores a pointer to the wrapped type with `next()` member function,
+- `RangeFn`: stores a pointer to the wrapped type with `operator()`,
+- `OwnedRange`: owns the instance of the type with `next()` member function, and
+- `OwnedRangeFn`: owns the instance of the type with operator().
+
+You can of course construct the wrapper types yourself but using the helper functions is preferable.
+
+## Example
+
+> typical use
 
 ```cpp
 struct IntGen
@@ -111,7 +134,7 @@ struct IntGen
     {
     }
 
-    std::optional<int> next()
+    std::optional<int> next()       // using next member function
     {
         // never returns a std::nullopt, infinite generator
         return m_int_dist(*m_rng);
@@ -154,6 +177,25 @@ int main()
     auto ten_int = gen | std::views::take(10) | std::ranges::to<std::vector>();
 
     // etc...
+}
+```
+
+> short generator using lambda
+
+```cpp
+int main()
+{
+    // this is just a silly example
+    // you can use std::views::iota and std::views::transform to get the same result
+
+    // the call operator of the lambda must be mutable, but if it's mutable the lambda
+    // can't be stored in OwnedRangeFn since it requires the type to be movable
+    auto even = [i = 0] mutable { return std::optional{ std::exchange(i, i + 2) }; };
+    auto iter = opt_iter::make(even);
+
+    for (auto v : iter | std::views::take(10)) {
+        std::println(" v: {}", v);
+    }
 }
 ```
 
