@@ -95,31 +95,38 @@ template <typename T>
 concept OptIter = /* has next member function or a call operator that returns an optional */;
 
 template <typename R>
-concept OptIterRet = std::move_constructible<R> and not std::is_reference_v<R>;
+concept OptIterRet = std::movable<R> and not std::is_reference_v<R>;
 ```
 
 > see the definition in the [source file](include/opt_iter/opt_iter.hpp)
 
-There are two essential functions in this library:
+The main functionality of this library is provided by these wrapper types:
+
+- `Range<T, R, bool>`: stores a pointer to the wrapped type with `next()` member function,
+- `RangeFn<f, R, bool>`: stores a pointer to the wrapped type with `operator()`,
+- `OwnedRange<T, R>`: owns the instance of the type with `next()` member function, and
+- `OwnedRangeFn<F, R>`: owns the instance of the type with operator().
+
+You can of construct the wrapper types yourself. But, using the helper functions is preferable.
 
 - `opt_iter::make`
 
-  This function wraps an already instantiated `OptIter` by constructing a `Range` or `RangeFn` depending on the `OptIter` kind: regular class/struct with `next()` member function for the former and a functor for the latter.
+  This function wraps an already instantiated `OptIter` by constructing a `Range` or `RangeFn` depending on the `OptIter` kind: regular class/struct with `next()` member function for the former and a functor (or lambda) for the latter. This function will instantiate `Range` or `RangeFn` variation that allocate the storage for the returned by its own.
+
+- `opt_iter::make_with`
+
+  This function also wraps `OptIter` in a `Range` or `RangeFn`, but it requires you to provide the storage for the return value. The variation of `Range` or `RangeFn` will use that storage for the lifetime of it (including the iterators produced by it). You might want to use this one if you don't want to pay the cost of allocation.
 
 - `opt_iter::make_owned`
 
-  This function works like the previous function but it owns the `OptIter` itself. It constructs `OwnedRange` or `OwnedRangeFn` depending on the `OptIter` kind: regular class/struct with `next()` member function for the former and functor for the latter.
+  This function works like the previous function but it owns the `OptIter` itself. It constructs `OwnedRange` or `OwnedRangeFn` depending on the `OptIter` kind: regular class/struct with `next()` member function for the former and functor for the latter. Since it's already allocating the `OptIter`, I decided the storage for this one is in the heap as well, there's no real benefit of doing otherwise.
 
-  > `OptIter` is required to be movable if it is to be wrapped by `OwnedRange` or `OwnedRangeFn`. This requirement is derived from the fact that to make `OwnedRange` and `OwnedRangeFn`, it needs to satisfy `std::ranges::viewable_range` which requires the type to be `std::movable`. This is done so that it can be used with `std::views::*` functionalities.
+- `opt_iter::make_lambda`
 
-The wrapper types are:
+  This function is a convenience function for creating a lambda-based generator. It creates `OwnedRangeFn`.
 
-- `Range`: stores a pointer to the wrapped type with `next()` member function,
-- `RangeFn`: stores a pointer to the wrapped type with `operator()`,
-- `OwnedRange`: owns the instance of the type with `next()` member function, and
-- `OwnedRangeFn`: owns the instance of the type with operator().
+> `*Range*` needs to be `std::movable` to satisfy `std::ranges::viewable_range` so that it can be used with `std::views::*` functionalities. But, we need the storage to be static. So we can only use the heap or user provided storage to make the classes safe to use.
 
-You can of course construct the wrapper types yourself but using the helper functions is preferable.
 
 ## Example
 
