@@ -5,25 +5,31 @@
 
 int main()
 {
-    // auto int_seq = [i = 100] mutable { return std::optional{ i++ }; };
-    // auto iter    = opt_iter::make(int_seq);
-    //
-    // std::println("first iteration");
-    // for (auto v : iter | std::views::take(10)) {
-    //     std::println(" v: {}", v);
-    // }
-    //
-    // std::println("second iteration");
-    // for (auto v : iter | std::views::take(10)) {
-    //     std::println(" v: {}", v);
-    // }
+    auto int_seq = opt_iter::make_lambda([i = 0uz] mutable -> std::optional<std::size_t> { return i++; });
 
-    // the call operator of the lambda must be mutable, but if it's mutable the lambda
-    // can't be stored in OwnedRangeFn since it requires the type to be movable
-    auto even_gen = [i = 0] mutable { return std::optional{ std::exchange(i, i + 2) }; };
-    auto iter     = opt_iter::make(even_gen);
+    std::println("int_seq first iteration");
+    for (auto v : int_seq | std::views::take(10)) {
+        std::println(" v: {}", v);
+    }
 
-    for (auto v : iter | std::views::take(10)) {
+    std::println("int_seq second iteration");
+    for (auto v : int_seq | std::views::take(10)) {
+        std::println(" v: {}", v);
+    }
+
+    std::println("fibonacci");
+    auto fibonacci = opt_iter::make_lambda([i = 0uz, j = 1uz] mutable -> std::optional<std::size_t> {
+        return std::exchange(i, std::exchange(j, i + j));
+    });
+    for (auto v : fibonacci | std::views::take(20)) {
+        std::println(" v: {}", v);
+    }
+
+    std::println("teens");
+    auto teens = opt_iter::make_lambda([i = 13uz] mutable -> std::optional<std::size_t> {
+        return i < 20 ? std::optional{ i++ } : std::nullopt;
+    });
+    for (auto v : teens) {
         std::println(" v: {}", v);
     }
 }

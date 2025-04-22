@@ -4,11 +4,9 @@
 
 #include <array>
 #include <generator>
-#include <iterator>
 #include <limits>
 #include <print>
 #include <random>
-#include <ranges>
 
 #define ENABLE_SPECIAL_MEMBER_FUNCTIONS 0
 
@@ -55,10 +53,6 @@ struct Val
     int   m_int;
     float m_float;
 };
-
-#if not ENABLE_SPECIAL_MEMBER_FUNCTIONS
-static_assert(std::is_trivial_v<Val>);
-#endif
 
 class RandGen
 {
@@ -137,11 +131,6 @@ private:
 template <typename... Ts>
 FlatIndex(Ts...) -> FlatIndex<sizeof...(Ts)>;
 
-static_assert(opt_iter::traits::HasNext<RandGen>);
-static_assert(std::input_iterator<opt_iter::Iterator<RandGen, Val>>);
-static_assert(std::ranges::range<opt_iter::Range<RandGen, Val>>);
-static_assert(std::ranges::viewable_range<opt_iter::Range<RandGen, Val>>);
-
 std::generator<Val> rand_gen_2(std::mt19937& rng, std::size_t limit)
 {
     auto int_dist = std::uniform_int_distribution{
@@ -172,17 +161,20 @@ struct SeqUIntGen
 
     unsigned int m_value = 0;
 };
-static_assert(opt_iter::traits::HasCallOp<SeqUIntGen>);
 
 int main()
 {
-    auto num_iter = 2'000'000u;
+    auto num_iter = 5'000'000u;
 
     auto rng = std::mt19937{ std::random_device{}() };
     auto gen = RandGen{ rng, num_iter };
 
     auto [time1, size1] = util::time_repeated(10, [&] {
-        auto vec = opt_iter::make(gen) | std::ranges::to<std::vector>();
+        auto store = std::optional<Val>{};
+        auto vec   = std::vector<Val>();
+        for (auto&& v : opt_iter::make_with(store, gen)) {
+            vec.push_back(std::move(v));
+        }
         gen.reset();
         return vec.size();
     });
@@ -201,7 +193,10 @@ int main()
     gen.reset();
 
     auto [time3, size3] = util::time_repeated(10, [&] {
-        auto vec = rand_gen_2(rng, num_iter) | std::ranges::to<std::vector>();
+        auto vec = std::vector<Val>();
+        for (auto&& v : rand_gen_2(rng, num_iter)) {
+            vec.push_back(std::move(v));
+        }
         return vec.size();
     });
     std::println("using std::generator: {}, {}", time3, size3);
@@ -214,11 +209,15 @@ int main()
     std::println("using new gen: {}", util::take_elipsis(iter, 20));
     std::println("using new gen: {}", util::take_elipsis(iter, 20));
 
-    num_iter       = 100;
+    num_iter       = 200;
     auto flat_iter = FlatIndex{ num_iter, num_iter, num_iter };
 
     auto [time4, size4] = util::time_repeated(10, [&] {
-        auto vec = opt_iter::make(flat_iter) | std::views::join | std::ranges::to<std::vector>();
+        auto store = std::optional<std::array<std::size_t, 3>>{};
+        auto vec   = std::vector<std::size_t>();
+        for (auto&& v : opt_iter::make_with(store, flat_iter)) {
+            vec.insert(vec.end(), v.begin(), v.end());
+        }
         flat_iter.reset();
         return vec.size();
     });
