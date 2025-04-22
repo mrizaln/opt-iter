@@ -146,31 +146,55 @@ int main()
     };
 
     "Range and RangeFn should satisfy input range and viewable range concept"_test = [] {
-        using Range = opt_iter::Range<IntSeq, int>;
+        using Range = opt_iter::Range<IntSeq, int, false>;
         static_assert(std::ranges::range<Range>);
         static_assert(std::ranges::input_range<Range>);
         static_assert(std::ranges::viewable_range<Range>);
 
-        using RangeFn = opt_iter::RangeFn<IntSeq2, int>;
+        using RangeFn = opt_iter::RangeFn<IntSeq2, int, false>;
         static_assert(std::ranges::range<Range>);
         static_assert(std::ranges::input_range<RangeFn>);
         static_assert(std::ranges::viewable_range<RangeFn>);
 
+        using RangeOwn = opt_iter::Range<IntSeq, int, true>;
+        static_assert(std::ranges::range<RangeOwn>);
+        static_assert(std::ranges::input_range<RangeOwn>);
+        static_assert(std::ranges::viewable_range<RangeOwn>);
+
+        using RangeFnOwn = opt_iter::RangeFn<IntSeq2, int, true>;
+        static_assert(std::ranges::range<RangeFnOwn>);
+        static_assert(std::ranges::input_range<RangeFnOwn>);
+        static_assert(std::ranges::viewable_range<RangeFnOwn>);
+
         // > these should fail to compile
-        // using Range2        = opt_iter::Range<IntSeq2, int>;
-        // using RangeFn2 = opt_iter::RangeFn<IntSeq, int>;
+
+        // using Range2   = opt_iter::Range<IntSeq2, int, false>;
+        // using RangeFn2 = opt_iter::RangeFn<IntSeq, int, false>;
+
+        // using RangeOwn2   = opt_iter::Range<IntSeq2, int, true>;
+        // using RangeFnOwn2 = opt_iter::RangeFn<IntSeq, int, true>;
     };
 
     "Range and RangeFn shold be able to be constructed for IntSeq and IntSeq2"_test = [] {
-        using Range = opt_iter::Range<IntSeq, int>;
-        static_assert(std::constructible_from<Range, IntSeq&>);
+        using Range = opt_iter::Range<IntSeq, int, false>;
+        static_assert(std::constructible_from<Range, std::optional<int>&, IntSeq&>);
 
-        using RangeFn = opt_iter::RangeFn<IntSeq2, int>;
-        static_assert(std::constructible_from<RangeFn, IntSeq2&>);
+        using RangeFn = opt_iter::RangeFn<IntSeq2, int, false>;
+        static_assert(std::constructible_from<RangeFn, std::optional<int>&, IntSeq2&>);
+
+        using RangeOwn = opt_iter::Range<IntSeq, int, true>;
+        static_assert(std::constructible_from<RangeOwn, IntSeq&>);
+
+        using RangeFnOwn = opt_iter::RangeFn<IntSeq2, int, true>;
+        static_assert(std::constructible_from<RangeFnOwn, IntSeq2&>);
 
         // > these should fail to compile
-        // using Range2        = opt_iter::Range<IntSeq2, int>;
-        // using RangeFn2 = opt_iter::RangeFn<IntSeq, int>;
+
+        // using Range2   = opt_iter::Range<IntSeq2, int, false>;
+        // using RangeFn2 = opt_iter::RangeFn<IntSeq, int, false>;
+
+        // using RangeOwn2   = opt_iter::Range<IntSeq2, int, true>;
+        // using RangeFnOwn2 = opt_iter::RangeFn<IntSeq, int, true>;
     };
 
     "OwnedRange and OwnedRangeFn should satisfy input range and viewable range concept"_test = [] {
@@ -204,11 +228,11 @@ int main()
     "make should construct Range/RangeFn depending on next()/operator()() exists"_test = [] {
         auto int_seq = IntSeq{ 5 };
         auto range   = opt_iter::make(int_seq);
-        static_assert(std::same_as<decltype(range), opt_iter::Range<IntSeq, int>>);
+        static_assert(std::same_as<decltype(range), opt_iter::Range<IntSeq, int, true>>);
 
         auto int_seq2 = IntSeq2{ 5 };
         auto range2   = opt_iter::make(int_seq2);
-        static_assert(std::same_as<decltype(range2), opt_iter::RangeFn<IntSeq2, int>>);
+        static_assert(std::same_as<decltype(range2), opt_iter::RangeFn<IntSeq2, int, true>>);
     };
 
     "make_owned should construct OwnedRange/OwnedRangeFn depending on next()/operator()() exists"_test = [] {
@@ -219,10 +243,22 @@ int main()
         static_assert(std::same_as<decltype(range2), opt_iter::OwnedRangeFn<IntSeq2, int>>);
     };
 
+    "make_with should construct Range/RangeFn depending on next()/operator()() exists"_test = [] {
+        auto int_seq = IntSeq{ 5 };
+        auto storage = std::optional<int>{};
+        auto range   = opt_iter::make_with(storage, int_seq);
+        static_assert(std::same_as<decltype(range), opt_iter::Range<IntSeq, int, false>>);
+
+        auto int_seq2 = IntSeq2{ 5 };
+        auto storage2 = std::optional<int>{};
+        auto range2   = opt_iter::make_with(storage2, int_seq2);
+        static_assert(std::same_as<decltype(range2), opt_iter::RangeFn<IntSeq2, int, false>>);
+    };
+
     "make should prioritize next() member function over operator()"_test = [] {
         auto int_seq3 = IntSeq3{ 5 };
         auto range    = opt_iter::make(int_seq3);
-        static_assert(std::same_as<decltype(range), opt_iter::Range<IntSeq3, int>>);
+        static_assert(std::same_as<decltype(range), opt_iter::Range<IntSeq3, int, true>>);
     };
 
     "make_owned should prioritize next() member function over operator()"_test = [] {
@@ -230,16 +266,37 @@ int main()
         static_assert(std::same_as<decltype(range), opt_iter::OwnedRange<IntSeq3, int>>);
     };
 
+    "make_with should prioritize next() member function over operator()"_test = [] {
+        auto int_seq3 = IntSeq3{ 5 };
+        auto storage  = std::optional<int>{};
+        auto range    = opt_iter::make_with(storage, int_seq3);
+        static_assert(std::same_as<decltype(range), opt_iter::Range<IntSeq3, int, false>>);
+    };
+
     "RangeFn and OwnedRangeFn should still be able to be constructed for IntSeq3"_test = [] {
-        static_assert(std::constructible_from<opt_iter::RangeFn<IntSeq3, int>, IntSeq3&>);
+        static_assert(std::constructible_from<opt_iter::RangeFn<IntSeq3, int, true>, IntSeq3&>);
+        static_assert(std::constructible_from< opt_iter::RangeFn<IntSeq3, int, false>, std::optional<int>&, IntSeq3&>);
         static_assert(std::constructible_from<opt_iter::OwnedRangeFn<IntSeq3, int>, IntSeq3&&>);
+    };
+
+    "make_lambda should construct OwnedRangeFn"_test = [] {
+        auto lambda = [i = 0] mutable -> std::optional<int> { return i++; };
+        auto range  = opt_iter::make_lambda(std::move(lambda));
+        static_assert(std::same_as<decltype(range), opt_iter::OwnedRangeFn<decltype(lambda), int>>);
     };
 
     auto int_seq  = IntSeq{ 100 };
     auto int_seq2 = IntSeq2{ 100 };
 
-    auto range  = opt_iter::make(int_seq);
-    auto range2 = opt_iter::make(int_seq2);
+    auto range_own  = opt_iter::make(int_seq);
+    auto range2_own = opt_iter::make(int_seq2);
+
+    auto storage  = std::optional<int>{};
+    auto storage2 = std::optional<int>{};
+
+    auto range  = opt_iter::make_with(storage, int_seq);
+    auto range2 = opt_iter::make_with(storage2, int_seq2);
+
     auto owned  = opt_iter::make_owned<IntSeq>(100);
     auto owned2 = opt_iter::make_owned<IntSeq2>(100);
 
@@ -292,5 +349,5 @@ int main()
             expect(that % actual_2 == expected_2);
             expect(that % actual_3 == expected_3);
         };
-    } | std::tuple{ &range, &range2, &owned, &owned2 };
+    } | std::tuple{ &range_own, &range2_own, &range, &range2, &owned, &owned2 };
 }
