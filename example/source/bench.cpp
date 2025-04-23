@@ -131,6 +131,20 @@ private:
 template <typename... Ts>
 FlatIndex(Ts...) -> FlatIndex<sizeof...(Ts)>;
 
+struct SeqUIntGen
+{
+    // using call operator
+    std::optional<int> operator()()
+    {
+        if (m_value == std::numeric_limits<unsigned int>::max()) {
+            return std::nullopt;
+        }
+        return m_value++;
+    }
+
+    unsigned int m_value = 0;
+};
+
 std::generator<Val> rand_gen_2(std::mt19937& rng, std::size_t limit)
 {
     auto int_dist = std::uniform_int_distribution{
@@ -148,19 +162,29 @@ std::generator<Val> rand_gen_2(std::mt19937& rng, std::size_t limit)
     }
 }
 
-struct SeqUIntGen
+template <std::size_t N, std::integral Index = std::size_t>
+    requires (N > 0)
+std::generator<std::array<Index, N>> flat_index_2(const std::array<Index, N> dims)
 {
-    // using call operator
-    std::optional<int> operator()()
-    {
-        if (m_value == std::numeric_limits<unsigned int>::max()) {
-            return std::nullopt;
-        }
-        return m_value++;
-    }
+    auto current = std::array<Index, N>{};
 
-    unsigned int m_value = 0;
-};
+    while (current != dims) {
+    repeat:
+        auto prev = current;
+        for (auto i = 0u; i < N; ++i) {
+            if (++current[i] >= dims[i]) {
+                current[i] = 0;
+            } else {
+                co_yield prev;
+                goto repeat;
+            }
+        }
+
+        current = dims;
+        co_yield prev;
+        break;
+    }
+}
 
 int main()
 {
@@ -233,9 +257,23 @@ int main()
     });
     std::println("using while loop: {}, {}", time5, size5);
 
+    auto [time6, size6] = util::time_repeated(10, [&] {
+        auto vec = std::vector<std::size_t>();
+        for (auto&& v : flat_index_2(std::array{ num_iter, num_iter, num_iter })) {
+            vec.insert(vec.end(), v.begin(), v.end());
+        }
+        return vec.size();
+    });
+    std::println("using std::generator: {}, {}", time6, size6);
+
     flat_iter.reset();
 
+    std::println("FlatIndex with opt_iter:");
     for (auto [x, y, z] : opt_iter::make_owned<FlatIndex<3>>(3, 2, 3)) {
+        std::println("({}, {}, {})", x, y, z);
+    }
+    std::println("FlatIndex with std::generator:");
+    for (auto [x, y, z] : flat_index_2(std::array{ 3, 2, 3 })) {
         std::println("({}, {}, {})", x, y, z);
     }
 
